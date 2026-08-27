@@ -1,19 +1,20 @@
 {
-  "name": "sharp-electron-dev",
+  "name": "sharp-electron-build",
   "private": true,
-  "description": "Dev workspace for building @janhapke/sharp-electron",
+  "description": "Builds a patched sharp addon + libvips that survive Electron's system glib on Linux",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=20.9.0"
   },
   "scripts": {
-    "repro": "ELECTRON_RUN_AS_NODE=1 electron test/electron-crash-repro.js",
+    "fetch": "./scripts/fetch-sources.sh",
     "build:libvips": "./scripts/build-libvips.sh",
     "build:sharp": "./scripts/build-sharp.sh",
     "test:gates": "./scripts/run-gates.sh",
-    "package": "./scripts/package-local.sh",
+    "emit": "./scripts/emit-dist.sh",
     "build": "./scripts/build-all.sh",
-    "release": "./scripts/release.sh"
+    "clean": "./scripts/clean.sh",
+    "repro": "ELECTRON_RUN_AS_NODE=1 electron test/electron-crash-repro.js"
   },
   "devDependencies": {
     "electron": "^33.0.0",

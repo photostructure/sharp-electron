@@ -1,5 +1,5 @@
 {
-  "$schema-comment": "Source of truth for which glib/gobject symbols this project renames and re-exports as vips_g_* wrappers (see extra/glib_wrapper.c/.h in vendor/sharp-libvips), and why each one is there. /rebuild-for-version and any human doing a version bump should diff a fresh grep of sharp's source against this list, not against the prose in README.md.",
+  "$schema-comment": "Source of truth for which glib/gobject symbols this project renames and re-exports as vips_g_* wrappers (see extra/glib_wrapper.c/.h in .work/sharp-libvips, added by patches/sharp-libvips-glib-wrapper.patch), and why each one is there. Any human doing a version bump (see README.md's Building-from-source section) should diff a fresh grep of sharp's source against this list, not against the prose in README.md.",
   "targetVersions": {
     "sharp": "0.35.3",
     "sharpLibvips": "1.3.2"

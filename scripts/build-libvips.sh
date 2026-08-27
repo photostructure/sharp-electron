@@ -6,20 +6,24 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
+./scripts/fetch-sources.sh
 ./scripts/apply-patches.sh
 
-VERSION_VIPS=$(grep '^VERSION_VIPS=' vendor/sharp-libvips/versions.properties | cut -d= -f2)
-VERSION_GLIB=$(grep '^VERSION_GLIB=' vendor/sharp-libvips/versions.properties | cut -d= -f2)
+VERSION_VIPS=$(grep '^VERSION_VIPS=' .work/sharp-libvips/versions.properties | cut -d= -f2)
+VERSION_GLIB=$(grep '^VERSION_GLIB=' .work/sharp-libvips/versions.properties | cut -d= -f2)
 DIST_DIR="$ROOT/dist/linux-x64"
 
-cd vendor/sharp-libvips
+# NOTE: sharp-libvips's own build.sh runs its container without --user, so what
+# it writes here is owned by root. That is why scripts/clean.sh deletes .work/
+# from inside a container rather than with a plain rm -rf.
+cd .work/sharp-libvips
 rm -f "sharp-libvips-linux-x64.tar.gz"
 ./build.sh linux-x64
 cd "$ROOT"
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR/lib/pkgconfig"
-tar xzf "vendor/sharp-libvips/sharp-libvips-linux-x64.tar.gz" -C "$DIST_DIR"
+tar xzf ".work/sharp-libvips/sharp-libvips-linux-x64.tar.gz" -C "$DIST_DIR"
 ln -sf "libvips-cpp.so.${VERSION_VIPS}" "$DIST_DIR/lib/libvips-cpp.so"
 
 # binding.gyp's `use_global_libvips` branch queries pkg-config for all three

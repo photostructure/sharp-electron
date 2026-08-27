@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs both required test gates against the freshly-built vendor/sharp addon.
+# Runs both required test gates against the freshly-built .work/sharp addon.
 # Exits non-zero if either gate fails, so this is usable as a CI check.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -8,8 +8,10 @@ ROOT="$PWD"
 echo "=== Gate 1: sharp's own upstream test suite (under plain Node) ==="
 GATE1_LOG=$(mktemp)
 docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
   -v "$ROOT:$ROOT" \
-  -w "$ROOT/vendor/sharp" \
+  -w "$ROOT/.work/sharp" \
   -e LD_LIBRARY_PATH="$ROOT/dist/linux-x64/lib" \
   sharp-electron-build sh -c "node --experimental-test-coverage test/unit.mjs" > "$GATE1_LOG" 2>&1
 gate1_exit=$?
@@ -36,7 +38,7 @@ echo "=== Gate 2: Electron crash repro against the rebuilt addon (the gate that 
 # setuid sandbox helper's usual permissions. ELECTRON_RUN_AS_NODE already
 # means no browser/renderer process gets spawned, so this shouldn't be
 # load-bearing locally, but costs nothing to set.
-SHARP_MODULE_PATH="$ROOT/vendor/sharp/dist/index.cjs" \
+SHARP_MODULE_PATH="$ROOT/.work/sharp/dist/index.cjs" \
   ELECTRON_RUN_AS_NODE=1 \
   ELECTRON_DISABLE_SANDBOX=1 \
   LD_LIBRARY_PATH="$ROOT/dist/linux-x64/lib" \

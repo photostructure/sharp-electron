@@ -6,7 +6,7 @@
 //
 // Expected on UNPATCHED sharp: step 1 succeeds, step 2 segfaults (process dies,
 // no JS exception, no stack trace — that's the bug).
-// Expected on a working @janhapke/sharp-electron build: both steps succeed.
+// Expected on a working @photostructure/sharp-electron build: both steps succeed.
 //
 // By default requires the top-level 'sharp' devDependency (the real,
 // unpatched npm package — useful for confirming the bug still reproduces
