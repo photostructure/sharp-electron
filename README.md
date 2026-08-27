@@ -1,8 +1,17 @@
 # sharp-electron
 
-A drop-in replacement for [`sharp`](https://github.com/lovell/sharp) that doesn't segfault under Electron on Linux.
+> **PhotoStructure's fork of
+> [janhapke/sharp-electron](https://github.com/janhapke/sharp-electron)** (Apache-2.0) — the patches
+> and the glib-wrapper technique are Jan Hapke's work, carried here essentially unmodified; see
+> [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). PhotoStructure maintains it so the binaries
+> shipped in PhotoStructure for Desktop are built and released from infrastructure PhotoStructure
+> controls, and so the `sharp` version can be bumped on PhotoStructure's own schedule. Fixes that
+> are not PhotoStructure-specific should go upstream — to
+> [lovell/sharp](https://github.com/lovell/sharp) where possible, otherwise to janhapke's repo.
 
-`sharp` crashes with a native segfault — not a catchable JS error — when decoding an image (JPEG, PNG, etc.) inside any process built on Electron's Linux binary. The cause is two copies of `glib` colliding in one process; no configuration flag fixes it. This package is a rebuild of `sharp` and its bundled `libvips` with the collision fixed at the linker level. To use it, add one `overrides` entry to your `package.json` ([Usage](#usage)). macOS and Windows aren't affected, so there this package transparently re-exports the real, unmodified `sharp`. To rebuild it yourself or bump it to a newer `sharp` release, see [Building from source](#building-from-source) and [Engineering notes](#engineering-notes).
+A patched rebuild of [`sharp`](https://github.com/lovell/sharp) and its bundled `libvips` that doesn't segfault under Electron on Linux.
+
+`sharp` crashes with a native segfault — not a catchable JS error — when decoding an image (JPEG, PNG, etc.) inside any process built on Electron's Linux binary. The cause is two copies of `glib` colliding in one process; no configuration flag fixes it. This repo rebuilds both with the collision fixed at the linker level, and emits the two binaries that result. Consumers swap them into an ordinary `sharp` install ([Use it](#use-it)) — macOS and Windows are unaffected and keep stock `sharp`. See [Build it](#build-it), [Bump to a newer sharp](#bump-to-a-newer-sharp), and [Engineering notes](#engineering-notes).
 
 ## The problem
 
@@ -10,100 +19,51 @@ Electron's Linux binary dynamically links the system's `glib` (for GTK integrati
 
 Characteristically, *encoding* raw pixels works fine — only *decoding* a real compressed image crashes. If that matches what you're seeing, this is your bug.
 
-## Usage
+## Build it
 
-Use npm `overrides` — not a direct `import` — so that **every** `require('sharp')` / `import sharp from 'sharp'` in your dependency tree, direct or transitive, resolves to this package:
-
-```json
-{
-  "overrides": {
-    "sharp": "npm:@janhapke/sharp-electron@0.35.3-electron.1"
-  }
-}
-```
+Requires Docker and git; everything else runs in containers.
 
 ```bash
-npm install
-```
-
-That's it — no source changes anywhere in your project. The `npm:` alias syntax is required: the override target's package name differs from `sharp`, so a plain `"sharp": "0.35.3-electron.1"` would tell npm to look for a package literally named `sharp` at that version, which doesn't exist.
-
-If `sharp` is also a **direct dependency** of your project, npm rejects an override that conflicts with it (`EOVERRIDE`). In that case point the dependency itself at this package and let the override reference it — but use the **nested** override form, not a plain `"sharp": "$sharp"`:
-
-```json
-{
-  "dependencies": {
-    "sharp": "npm:@janhapke/sharp-electron@0.35.3-electron.1"
-  },
-  "overrides": {
-    "sharp": {
-      ".": "$sharp",
-      "sharp": "0.35.3"
-    }
-  }
-}
-```
-
-The plain (non-nested) form, `"overrides": { "sharp": "$sharp" }`, looks like it should be equivalent but silently isn't: npm overrides are recursive by default, so it also rewrites `@janhapke/sharp-electron`'s **own internal** `sharp` dependency (the one its non-Linux fallback and its TypeScript types depend on) back into itself. The result isn't an install error — it resolves, but `require('sharp')` inside the fallback path becomes a self-referential circular require that silently returns an empty `{}`, so calling it throws `sharp is not a function` deep inside your own code, and `tsc` fails to resolve `sharp`'s types. The `.` key above pins the override for direct requests to `$sharp` as before, while the nested `"sharp": "0.35.3"` key scopes a *second*, narrower override that applies only *inside* the resolved package's own tree, restoring its internal dependency to the real, unpatched `sharp` it actually needs there. Confirmed against a real install: without the nested form, `node_modules/sharp/node_modules/sharp` doesn't exist at all; with it, `node_modules/sharp/node_modules/sharp` is `sharp@0.35.3`, and the fallback works correctly on a simulated non-Linux platform.
-
-### Local testing against an unpublished build
-
-To test a locally built copy of this repo (see [Building from source](#building-from-source)) instead of the published package:
-
-```json
-{
-  "overrides": {
-    "sharp": "file:../sharp-electron/package"
-  }
-}
-```
-
-After rebuilding this package, force a refresh in the consuming project — an `overrides`-resolved `file:` target gets **copied** into `node_modules/sharp`, not symlinked, so a plain `npm install` may not pick up the change:
-
-```bash
-rm -rf node_modules/sharp && npm install
-```
-
-### Why `overrides`, not a direct import
-
-You *can* instead `npm install @janhapke/sharp-electron` and change call sites to import it directly — but only safely if you change **every** place your project touches `sharp`, including transitive dependencies you don't control.
-
-The failure mode if you miss one: this package and the real `sharp` both ship a `libvips-cpp.so` with the identical SONAME (intentionally, for compatibility). The ELF dynamic linker deduplicates shared libraries by SONAME **within a process** — once one `libvips-cpp.so` is loaded, every other module in that process that needs that SONAME silently reuses the already-loaded copy, regardless of how correctly it was built or what its RPATH says. So if two plugins each import `sharp` and only one is switched over, whichever loads first wins for both. If the unpatched one wins, the symptom isn't even the original segfault — it's a confusing ELF loader error (`undefined symbol: vips_g_...`) in the correctly-patched module. This exact scenario happened while validating this package in a real project.
-
-`overrides` sidesteps the problem structurally: every `sharp`-touching module resolves to the exact same files, so two different `libvips-cpp.so`s can never coexist in the process. Auditing call sites by hand gives no such guarantee.
-
-### Platform support
-
-| Platform | Behavior |
-|---|---|
-| `linux-x64` | The patched build. Verified against `sharp`'s own upstream test suite and a dedicated Electron crash-regression test. |
-| `linux` (other architectures, e.g. `arm64`) | Throws a clear error at load time rather than silently falling back to real `sharp` — a silent fallback would just defer the crash to the first image decode. |
-| macOS / Windows | Re-exports the real, unmodified `sharp` (a normal dependency of this package; npm installs the correct official binary automatically). The bug doesn't exist on these platforms. |
-
-### Troubleshooting
-
-- **`undefined symbol: vips_g_...` at load time** (an exception, not a crash) — almost always the SONAME-collision issue described above: some module in the process still resolves `sharp` to the real, unpatched package. Check that the `overrides` entry is in place and that `node_modules/sharp` actually contains this package's files.
-- **Segfault decoding an image under Electron on Linux, even with `overrides` correctly in place** — an unpatched `libvips-cpp.so` from some other source is winning the SONAME race (e.g. a copy loaded by a non-npm mechanism). Check what else in the process loads `libvips`.
-- **`ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file` — but only in a *packaged* app, never under `npm start`/dev mode.** This isn't a `sharp-electron` bug — it's your packager silently dropping or mis-placing the `libvips-cpp.so` that sits next to `linux-x64/sharp/.../sharp-linux-x64-*.node` (found via that addon's `$ORIGIN` RPATH). Two independent causes, both confirmed in a real Electron Forge project — check both:
-  1. **Your own native-module whitelist/externals script only walks `dependencies`, not `optionalDependencies`.** If you (or your packaging plugin) hand-roll a "which `node_modules` packages contain native binaries" trace to avoid webpack bundling them, and it only follows `package.json`'s `dependencies` field, it will never reach `@img/sharp-libvips-linux-x64` — prebuilt-binary packages like this are conventionally declared as `optionalDependencies`. Result: the `.so` gets excluded from the packaged app outright, not just mis-placed.
-  2. **Your asar tooling unpacks `.node` files but not their `.so` sidecars.** Electron Forge's `@electron-forge/plugin-auto-unpack-natives`, for example, sets `asar.unpack` to a glob matching only `**/*.node` — it physically moves the addon out of the compressed `app.asar` into `app.asar.unpacked`, but leaves any co-located shared library trapped inside the archive, where `dlopen()` can never reach it (even though `npx asar list` will still show it "present" — that lists the archive's logical contents, not what's been physically unpacked). You need to extend the unpack glob yourself to also match `.so`/`.so.*`, e.g. (Forge): `packagerConfig.asar.unpack = '{**/*.so,**/*.so.*}'` (merges with the plugin's own `.node` pattern rather than replacing it).
-
-  Diagnose by checking the packaged output directly, not just build logs: `find <packaged-app>/resources/app.asar.unpacked -iname 'libvips-cpp.so*'` — if it's missing, you're hitting #1; if the addon is there but the `.so` isn't, you're hitting #2.
-
-## Building from source
-
-Requires only Docker on the host — the entire toolchain runs in a container matching `sharp`'s own CI environment.
-
-```bash
-git clone --recurse-submodules https://github.com/janhapke/sharp-electron.git
+git clone https://github.com/photostructure/sharp-electron.git
 cd sharp-electron
 npm install
 npm run build
 ```
 
-This applies the patches to the vendored `sharp-libvips`/`sharp` submodules, rebuilds both, runs both test gates, and packages the result into `package/` — ready to consume via a `file:` override as shown above. The individual stages are also available separately: `npm run build:libvips`, `npm run build:sharp`, `npm run test:gates`, `npm run package`.
+That fetches the upstream commits pinned in [versions.env](versions.env), applies the patches, rebuilds libvips and sharp's addon, runs both test gates, and writes two files to `out/linux-x64/`:
 
-To confirm the bug itself on the *unpatched* `sharp` first (recommended before trusting any of this): `npm run repro` runs [test/electron-crash-repro.js](test/electron-crash-repro.js) against the stock npm `sharp` under `ELECTRON_RUN_AS_NODE` — expect the encode step to succeed and the decode step to kill the process.
+```
+sharp-linux-x64-<version>.node   patched addon — imports vips_g_*, never bare g_*
+libvips-cpp.so.<version>         patched libvips — exports no glib symbols
+```
+
+`npm run clean` starts over. Individual stages, if you need them: `npm run fetch`, `build:libvips`, `build:sharp`, `test:gates`, `emit`.
+
+## Use it
+
+Copy both files into the consuming project's `node_modules/@img/sharp-linux-x64/lib/`, then delete its `node_modules/@img/sharp-libvips-linux-x64/` directory.
+
+That is the whole integration. Stock `sharp` from npm picks the patched pair up with no source changes, no `package.json` edit, and no npm `overrides` — the addon's `$ORIGIN` RPATH finds the libvips sitting next to it.
+
+**Delete the stock libvips rather than leaving it in place.** Both `.so` files declare the same SONAME, and the ELF loader deduplicates by SONAME per process: leave both on disk and whichever loads first wins for every module in that process. When the unpatched one wins you don't get the original segfault, you get a confusing `undefined symbol: vips_g_...` from the correctly-patched module.
+
+Only `linux-x64` needs this. macOS and Windows don't have the bug — leave stock `sharp` alone there.
+
+PhotoStructure does this from `bin/patch-sharp.mjs`, wired as `src/desktop`'s `postinstall`, with these two files committed under `tools/sharp-patched/linux-x64/`.
+
+## Bump to a newer sharp
+
+Update the refs in [versions.env](versions.env), then `npm run clean && npm run build`. If a patch stops applying, `scripts/apply-patches.sh` says so instead of guessing.
+
+Prefer the guided process for a real bump: [`/rebuild-for-version <sharp-version> <sharp-libvips-version>`](.claude/commands/rebuild-for-version.md). A bump involves judgment a script gets silently wrong — whether the bug still reproduces upstream at all, whether a patch conflict is context drift or a structural change, and whether the wrapper symbol set is still complete. That last one is the dangerous one: a newly-added bare glib call site is not a build error, it is a segfault in production.
+
+Note that the emitted filenames carry the sharp and libvips versions, so a consumer that hardcodes them (PhotoStructure's `bin/patch-sharp.mjs` does, deliberately, so a mismatch fails the install) needs updating in the same change.
+
+## Troubleshooting
+
+- **`undefined symbol: vips_g_...` at load time** (an exception, not a crash) — the SONAME collision above: something in the process resolved to a stock, unpatched `libvips-cpp.so`. Confirm `@img/sharp-libvips-linux-x64` is gone and the patched pair really is in `@img/sharp-linux-x64/lib/`.
+- **Segfault decoding an image under Electron on Linux, with the swap in place** — an unpatched `libvips-cpp.so` from elsewhere is winning the SONAME race. Check what else in the process loads libvips.
+- **`ERR_DLOPEN_FAILED: libvips-cpp.so...: cannot open shared object file`, but only in a *packaged* app** — your packager is dropping the `.so` that sits beside the addon. Two causes, both seen in a real Electron Forge project: a native-module whitelist that walks only `dependencies` (prebuilt `@img/*` packages are `optionalDependencies`), or asar tooling that unpacks `.node` but not `.so` sidecars — `@electron-forge/plugin-auto-unpack-natives` matches only `**/*.node`, leaving the library inside the archive where `dlopen()` cannot reach it. Diagnose against the packaged output: `find <app>/resources/app.asar.unpacked -iname 'libvips-cpp.so*'`.
 
 ## Engineering notes
 
@@ -134,11 +94,10 @@ Seven symbols are wrapped. The machine-readable source of truth — including ea
 
 ### Packaging details that matter
 
-Three hard-won, non-obvious decisions live in [scripts/package-local.sh](scripts/package-local.sh):
+Two hard-won, non-obvious decisions live in [scripts/emit-dist.sh](scripts/emit-dist.sh):
 
 - **`libvips-cpp.so` sits next to the `.node` addon, found via RPATH — and it must be old-style `DT_RPATH`, not `DT_RUNPATH`.** `patchelf --set-rpath` produces `DT_RUNPATH` by default, which the loader consults *after* `LD_LIBRARY_PATH` — so anything else in a real consumer's environment or `node_modules` that provides the same SONAME can win over the co-located patched copy. `patchelf --force-rpath` produces `DT_RPATH`, consulted *before* `LD_LIBRARY_PATH`, so the co-located copy always wins for the addon's own direct dependency. (Setting `process.env.LD_LIBRARY_PATH` from JavaScript doesn't work at all: glibc reads it once at process start, not per `dlopen()`.)
-- **The SONAME is kept identical to upstream's** — that's what makes the per-process SONAME deduplication safe *when everything resolves to this package* (see [Why overrides](#why-overrides-not-a-direct-import)) and is why `overrides` is the recommended install method rather than an optional nicety.
-- **`package/` runs its own `npm install` during packaging** because npm does not recursively install a `file:` dependency's own dependencies the way it does for registry packages — without this, the non-Linux `require('sharp')` fallback breaks in every local-testing setup. Relatedly, `package/package.json` must **not** declare `"os"`/`"cpu"` restrictions: those make npm skip installing the package entirely on other platforms, which would prevent the fallback from ever existing there.
+- **The SONAME is kept identical to upstream's** — that is what lets the patched pair drop into a stock `sharp` install unchanged. It is also why the consumer must delete `@img/sharp-libvips-linux-x64`: see [Use it](#use-it).
 
 ### Test gates
 
@@ -147,7 +106,9 @@ Every build must pass both, enforced by [scripts/run-gates.sh](scripts/run-gates
 1. **`sharp`'s own upstream test suite** against the rebuilt addon (1804/1811 at last run; the one known failure is `test/unit/esm.mjs`, a pre-existing Node CJS/ESM interop quirk unrelated to these patches — it fails identically against stock `sharp`).
 2. **The Electron crash regression test** ([test/electron-crash-repro.js](test/electron-crash-repro.js)): encode raw pixels to JPEG, then decode a real JPEG via `.metadata()` and `.resize().toBuffer()`, under `ELECTRON_RUN_AS_NODE`. On an unpatched build the decode step reliably segfaults; on a correct build both steps pass. The same script serves both directions via `SHARP_MODULE_PATH`.
 
-**If a gate fails with `undefined symbol: g_<something>`**: that's a missing wrapper symbol. Add it to `extra/glib_wrapper.c`/`.h` in `vendor/sharp-libvips` (remember the `visibility("default")` attribute), patch the call site, update `patches/wrapper-symbols.json`, regenerate the patch files, rebuild, re-run the gates. This loop is normal — it's how `g_utf8_validate` was found.
+**Keep the `electron` devDependency pinned to the version the consumer ships.** This gate's only job is to answer "does sharp survive under *our* Electron", and it is exactly-pinned rather than a caret range so it cannot drift away from that silently. It had been left on `^33.0.0` — ten majors behind PhotoStructure's 43.4.1 — while claiming to validate the shipped runtime. Gate 2 prints the electron version it ran on, so a mismatch is visible in the log.
+
+**If a gate fails with `undefined symbol: g_<something>`**: that's a missing wrapper symbol. Add it to `extra/glib_wrapper.c`/`.h` in `.work/sharp-libvips` (remember the `visibility("default")` attribute), patch the call site, update `patches/wrapper-symbols.json`, regenerate the patch files, rebuild, re-run the gates. This loop is normal — it's how `g_utf8_validate` was found.
 
 ### Alternatives that didn't work
 
@@ -160,42 +121,27 @@ Tried before concluding a from-source rebuild was the only real fix:
 | `RTLD_DEEPBIND` | Crashes differently, during load |
 | Do `sharp` work in a real separate Node process (not Electron's binary) | Works, but requires bundling a Node binary and adds an IPC boundary |
 
-### Updating to a new `sharp` release
-
-This is deliberately a guided Claude Code command, not a blind script: [.claude/commands/rebuild-for-version.md](.claude/commands/rebuild-for-version.md) (`/rebuild-for-version <sharp-version> <sharp-libvips-version>`). A version bump involves genuine judgment calls a script would get silently wrong — whether the bug even still reproduces upstream, whether a patch conflict is trivial context drift or a structural change, whether the wrapper symbol set changed. The command:
-
-1. Re-pins the submodules and first verifies the bug **still reproduces on an unpatched build** — upstream may have fixed it.
-2. Attempts the existing patches; diagnoses (rather than force-fixes) any conflict.
-3. Re-runs the exhaustive `glib`-call grep and diffs it against `patches/wrapper-symbols.json`.
-4. Rebuilds, runs both gates, and follows the wrapper-expansion loop above (bounded to 3 iterations before stopping to report).
-5. Re-verifies symbol visibility (`objdump -T`) and `DT_RPATH` (`readelf -d`), and prepares — **but never executes** — the release.
-
-Version scheme: `<upstream-sharp-version>-electron.N` — the version always names the exact `sharp` release it tracks; `N` bumps for this package's own revisions. Every version this scheme produces is, by construction, a semver **prerelease** (the `-electron.N` suffix), which matters at publish time — see below.
-
-### Releasing
-
-`npm run release <version>` ([scripts/release.sh](scripts/release.sh)) runs the full pipeline, then syncs every version reference — `package/package.json`'s `version` and its `sharp` fallback dependency (pinned to the upstream part of the new version), and this README's install snippets — then prints the remaining steps. **Publishing is always a manual, human-confirmed action** — no script or command in this repo runs `npm publish`, `git tag`, or `git push` on its own. That's a deliberate design decision, not a missing feature: a bad automated judgment call shipping silently to consumers is a worse failure mode than a release waiting a day for review.
-
-**Publishing requires `--tag latest`, every time**: `npm publish --tag latest` (not plain `npm publish`). Because every version has the `-electron.N` suffix, npm/semver treats it as a prerelease and refuses to move the `latest` dist-tag implicitly (`npm error: You must specify a tag using --tag when publishing a prerelease version`) — without `--tag latest`, a bare `npm install @janhapke/sharp-electron` (or the version-less `overrides` form) would resolve to nothing. `--access public` is not needed on the command line; it's already set via `package/package.json`'s `publishConfig`.
-
-Note for the published package: `package/README.md` is generated at package time (a copy of this file, since npmjs.com displays the published package's own README) — edit this file, never that copy.
-
 ### Repository layout
 
 ```
+versions.env                 pinned upstream commits — the one place a version bump starts
 patches/                     the actual fix: two .patch files + wrapper-symbols.json (symbol manifest)
-vendor/sharp-libvips/        git submodule, pinned at the target release tag (pristine; patched at build time)
-vendor/sharp/                git submodule, same
-scripts/                     the full pipeline: apply-patches → build-libvips → build-sharp → run-gates → package-local
+scripts/                     fetch-sources → apply-patches → build-libvips → build-sharp → run-gates → emit-dist
 test/electron-crash-repro.js the regression test (and original bug repro)
-package/                     the published npm package: index.js dispatcher, index.d.ts (forwards to sharp's own types), built linux-x64/ payload
-dist/                        gitignored Phase A build output
-.github/workflows/ci.yml    Linux full-pipeline job + macOS/Windows fallback smoke test
+.github/workflows/ci.yml     the full Linux pipeline on every push
+.work/                       gitignored; pinned upstream checkouts, partly root-owned (see clean.sh)
+dist/                        gitignored; Phase A libvips output + generated .pc files
+out/linux-x64/               gitignored; the two emitted binaries — this repo's whole product
 ```
 
 ## Status
 
-The `linux-x64` build passes both test gates and has been verified end-to-end in a real consuming Electron project. The macOS/Windows fallback is implemented and covered by CI — check the [workflow's status](.github/workflows/ci.yml) for the current result on real runners. `linux-arm64` has no patched build — it fails loudly rather than silently.
+The `linux-x64` build passes both test gates and has been verified end-to-end
+against PhotoStructure for Desktop: stock `sharp` with these two binaries swapped in
+survives the decode path under both a `LD_PRELOAD`ed system `libgobject` and the real
+packaged Electron binary, each of which reliably segfaults stock `sharp`.
+
+No other architecture has a patched build. PhotoStructure ships linux-x64 only.
 
 ## License
 
