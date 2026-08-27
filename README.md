@@ -59,6 +59,18 @@ Prefer the guided process for a real bump: [`/rebuild-for-version <sharp-version
 
 Note that the emitted filenames carry the sharp and libvips versions, so a consumer that hardcodes them (PhotoStructure's `bin/patch-sharp.mjs` does, deliberately, so a mismatch fails the install) needs updating in the same change.
 
+## Releases
+
+Releases are cut by [`.github/workflows/release.yml`](.github/workflows/release.yml), never from a workstation — push a `v*-ps.*` tag, or dispatch the workflow with a tag. It runs the full pipeline including both gates, asserts the emitted addon imports no bare glib symbols, attaches both binaries with their sha256 digests, and emits a signed build-provenance attestation:
+
+```bash
+gh attestation verify sharp-linux-x64-0.35.3.node --repo photostructure/sharp-electron
+```
+
+The tag scheme is `-ps.N`, deliberately *not* upstream's `-electron.N`. This fork keeps inheriting upstream's tags on every fetch, and `gh release create` silently reuses an existing tag — which once attached our assets to upstream's commit rather than ours.
+
+**These builds are not bit-reproducible yet.** Two builds of the same commit produced an identical `.node` but a differing `libvips-cpp.so`. No host paths leak in (sharp-libvips builds at fixed container paths) and no timestamps are embedded, so the cause is somewhere in its vendored dependency builds; it has no `SOURCE_DATE_EPOCH` handling. Until that is chased down, what ties released bytes to a commit is the attestation, not a rebuild. [`reproducibility.yml`](.github/workflows/reproducibility.yml) builds twice and reports the difference rather than letting the gap go unmeasured.
+
 ## Troubleshooting
 
 - **`undefined symbol: vips_g_...` at load time** (an exception, not a crash) — the SONAME collision above: something in the process resolved to a stock, unpatched `libvips-cpp.so`. Confirm `@img/sharp-libvips-linux-x64` is gone and the patched pair really is in `@img/sharp-linux-x64/lib/`.

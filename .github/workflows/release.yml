@@ -1,0 +1,117 @@
+name: Release
+
+# Builds the patched binaries and publishes them as release assets.
+#
+# Releases are cut HERE, not from a workstation. PhotoStructure pins these
+# assets by sha256 in src/desktop/sharp-patched.json and installs them into
+# every Linux desktop build, so their provenance needs to be a public,
+# reproducible-by-inspection run rather than "whatever was in someone's
+# out/ directory". Each asset also gets a signed build-provenance attestation
+# (verify with: gh attestation verify <file> --repo photostructure/sharp-electron).
+#
+# Tag scheme is `-ps.N`, deliberately not upstream's `-electron.N`: this is a
+# fork of janhapke/sharp-electron and keeps inheriting its tags on every fetch,
+# so a colliding tag would silently attach our assets to upstream's commit.
+
+on:
+  push:
+    tags:
+      - "v*-ps.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and release (e.g. v0.35.3-ps.2)"
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: npm install
+
+      # fetch -> patch -> libvips -> sharp -> both gates -> emit.
+      # The gates are not optional here: a release that fails the Electron
+      # crash regression is exactly the artifact we must never publish.
+      - name: Build and verify
+        run: npm run build
+
+      - name: Record digests
+        id: digests
+        run: |
+          cd out/linux-x64
+          sha256sum * | tee "$RUNNER_TEMP/SHA256SUMS"
+          {
+            echo 'table<<EOF'
+            echo '| file | sha256 |'
+            echo '| --- | --- |'
+            sha256sum * | awk '{printf "| `%s` | `%s` |\n", $2, $1}'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # Independent check that the emitted addon really is patched, so a
+      # silently-unpatched build cannot be published even if the gates pass.
+      - name: Assert no bare glib imports
+        run: |
+          cd out/linux-x64
+          if readelf --dyn-syms -W sharp-linux-x64-*.node | grep ' UND ' | grep -qE '\bg_[a-z]'; then
+            echo "::error::addon still imports bare glib symbols — not a patched build"
+            readelf --dyn-syms -W sharp-linux-x64-*.node | grep ' UND ' | grep -E '\bg_[a-z]'
+            exit 1
+          fi
+          test "$(readelf --dyn-syms -W libvips-cpp.so.* | grep -cE ' (g_object_|g_type_|g_signal_)')" = 0 \
+            || { echo "::error::libvips still exports glib symbols"; exit 1; }
+          echo "ok: 0 bare glib imports, 0 glib exports"
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "out/linux-x64/*"
+
+      - name: Compose release notes
+        env:
+          TABLE: ${{ steps.digests.outputs.table }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Written via a file rather than inline `--notes`, so GitHub
+          # expressions and shell heredocs never have to interleave.
+          {
+            echo "Patched \`sharp\` addon and \`libvips\` for **linux-x64**, built from the upstream commits pinned in [versions.env](versions.env)."
+            echo
+            echo "Their glib symbols are renamed to \`vips_g_*\`, so they cannot bind to the system glib that Electron's Linux binary links via \`DT_NEEDED\`. Without that, sharp's \`g_object_unref\` resolves into the system libgobject while libvips keeps using its own statically-linked copy, and the process SIGSEGVs on the first image decode ([electron/electron#46323](https://github.com/electron/electron/issues/46323))."
+            echo
+            echo "**Install:** copy both into a project's \`node_modules/@img/sharp-linux-x64/lib/\`, then delete its \`node_modules/@img/sharp-libvips-linux-x64/\`. Both \`.so\` files share a SONAME and the ELF loader dedupes by SONAME per process, so the stock one must go rather than merely be shadowed."
+            echo
+          } > "$RUNNER_TEMP/notes.md"
+          printf '%s\n\n' "$TABLE" >> "$RUNNER_TEMP/notes.md"
+          {
+            echo "Built by [this workflow run](https://github.com/$REPO/actions/runs/$RUN_ID) from \`$SHA\`, with a signed build-provenance attestation:"
+            echo
+            echo '```'
+            echo "gh attestation verify <file> --repo $REPO"
+            echo '```'
+            echo
+            echo "Both gates passed: sharp's own upstream test suite, and the Electron crash regression."
+            echo
+            echo "libvips is not currently bit-reproducible, so rebuilding will not necessarily reproduce these digests; the attestation above, not a rebuild, is what ties these bytes to this commit. See the reproducibility workflow for current status."
+          } >> "$RUNNER_TEMP/notes.md"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" out/linux-x64/* \
+            --title "$TAG — patched sharp for Electron on linux-x64" \
+            --notes-file "$RUNNER_TEMP/notes.md"
