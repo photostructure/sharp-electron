@@ -4,6 +4,21 @@ on:
   push:
   pull_request:
 
+# Least privilege. This workflow only reads the repo — it publishes nothing.
+# Without this block a fork pull request would run with whatever the repository
+# default happens to be, which is the setting most likely to drift back to
+# `write` over time.
+permissions:
+  contents: read
+
+# CI-only, so superseding an in-flight run is what we want: the build takes
+# ~20 minutes and a newer commit makes the older result irrelevant. Release
+# publishing lives in release.yml and has its own, deliberately
+# non-cancelling, group.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Runs the full pipeline (fetch -> patches -> Phase A -> Phase B -> both test
   # gates -> emit) on every push/PR. This is what keeps README.md's claims
@@ -17,19 +32,28 @@ jobs:
   # so there is nothing platform-specific here for another runner to check.
   linux-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes. Leaving the token in .git/config would expose
+          # it to every build step, including the upstream sharp/libvips code
+          # this repo compiles.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
+      # No cache: a poisoned or stale npm cache is a supply-chain path into a
+      # build whose output we publish and pin by digest.
       - run: npm install
 
       - name: Full build + both test gates
         run: npm run build
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: sharp-patched-linux-x64
