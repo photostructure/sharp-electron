@@ -1,0 +1,39 @@
+name: Check workflows
+
+# Static analysis of this repo's own workflows. These workflows publish
+# binaries that PhotoStructure installs into every Linux desktop build, so a
+# template injection or over-broad permission here reaches end users. zizmor
+# checks the security semantics (injection, permissions, dangerous triggers,
+# persisted credentials, caches, artifact flow) that a YAML linter does not.
+
+on:
+  push:
+    paths:
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+  schedule:
+    # Rules get added upstream; a repo that only scans on change never sees them.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-workflows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
