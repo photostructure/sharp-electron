@@ -22,21 +22,62 @@ on:
         description: "Tag to create and release (e.g. v0.35.3-ps.2)"
         required: true
 
+# Default to read; the release job elevates itself below, so any job added
+# later starts least-privileged rather than inheriting publish rights.
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
+
+# Repository-wide and deliberately non-cancelling: publishing must never be
+# interrupted halfway, and two tag pushes must not race to create one release.
+concurrency:
+  group: ${{ github.repository }}-release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+      id-token: write # OIDC identity for the attestation
+      attestations: write # record the build-provenance attestation
     steps:
-      - uses: actions/checkout@v7
+      # workflow_dispatch's ref is operator-controlled: GitHub's UI and CLI can
+      # dispatch from any branch or tag, and `gh release create` would then tag
+      # whatever got checked out. Validate before checkout or any repository
+      # code runs. This guard only protects refs whose own copy of this file
+      # contains it, which is why the branch allowlist is narrow.
+      - name: Validate dispatch ref and tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$REF_TYPE" != "branch" ] || [ "$REF_NAME" != "main" ]; then
+            echo "::error::may only be dispatched from the main branch (got $REF_TYPE '$REF_NAME')"
+            exit 1
+          fi
+          case "$TAG" in
+            v*-ps.*) ;;
+            *)
+              echo "::error::tag must match 'v*-ps.*' so it cannot collide with upstream's -electron.N tags (got '$TAG')"
+              exit 1
+              ;;
+          esac
 
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Publishing uses github.token via the gh CLI below, not a credential
+          # left in .git/config where every later step — including the upstream
+          # sharp/libvips code this repo compiles — could read it.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
+      # No cache, by design: these bytes get pinned by digest downstream, so a
+      # poisoned or stale npm cache would be laundered into a signed release.
       - run: npm install
 
       # fetch -> patch -> libvips -> sharp -> both gates -> emit.
@@ -49,12 +90,12 @@ jobs:
         id: digests
         run: |
           cd out/linux-x64
-          sha256sum * | tee "$RUNNER_TEMP/SHA256SUMS"
+          sha256sum -- * | tee "$RUNNER_TEMP/SHA256SUMS"
           {
             echo 'table<<EOF'
             echo '| file | sha256 |'
             echo '| --- | --- |'
-            sha256sum * | awk '{printf "| `%s` | `%s` |\n", $2, $1}'
+            sha256sum -- * | awk '{printf "| `%s` | `%s` |\n", $2, $1}'
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -72,7 +113,7 @@ jobs:
             || { echo "::error::libvips still exports glib symbols"; exit 1; }
           echo "ok: 0 bare glib imports, 0 glib exports"
 
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "out/linux-x64/*"
 
@@ -114,7 +155,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
+          EVENT: ${{ github.event_name }}
         run: |
-          gh release create "$TAG" out/linux-x64/* \
+          # On a tag push the tag already exists, so require it to still match
+          # what we built. A dispatch is creating the tag and cannot verify one.
+          verify=()
+          if [ "$EVENT" = "push" ]; then
+            verify=(--verify-tag)
+          fi
+          gh release create "$TAG" out/linux-x64/* "${verify[@]}" \
             --title "$TAG — patched sharp for Electron on linux-x64" \
             --notes-file "$RUNNER_TEMP/notes.md"
