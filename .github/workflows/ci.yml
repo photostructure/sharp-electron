@@ -45,9 +45,14 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+          # setup-node v7 enables npm caching by default whenever package.json
+          # names npm via `packageManager` or `devEngines.packageManager`.
+          # Neither is set today, but adding one — PUBLISH-SAFER.md recommends
+          # exactly that for the npm floor — would silently switch caching on.
+          # A poisoned or stale cache is a supply-chain path into a build whose
+          # output we publish and pin by digest, so refuse it explicitly.
+          package-manager-cache: false
 
-      # No cache: a poisoned or stale npm cache is a supply-chain path into a
-      # build whose output we publish and pin by digest.
       - run: npm install
 
       - name: Full build + both test gates
