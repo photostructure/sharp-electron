@@ -67,6 +67,13 @@ Releases are cut by [`.github/workflows/release.yml`](.github/workflows/release.
 gh attestation verify sharp-linux-x64-0.35.3.node --repo photostructure/sharp-electron
 ```
 
+That subcommand needs **gh >= 2.49**; Ubuntu's `gh` package is older (26.04 ships 2.46) and will report `unknown command "attestation"`. Either install gh from [cli.github.com](https://cli.github.com), or check the attestation through the API, which any gh can do:
+
+```bash
+gh api repos/photostructure/sharp-electron/attestations/sha256:<digest> \
+  --jq '.attestations[0].bundle.dsseEnvelope.payload' | base64 -d | jq .subject
+```
+
 The tag scheme is `-ps.N`, deliberately *not* upstream's `-electron.N`. This fork keeps inheriting upstream's tags on every fetch, and `gh release create` silently reuses an existing tag — which once attached our assets to upstream's commit rather than ours.
 
 ## Troubleshooting

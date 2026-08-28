@@ -101,6 +101,12 @@ jobs:
             echo "gh attestation verify <file> --repo $REPO"
             echo '```'
             echo
+            echo "That subcommand needs gh >= 2.49. With an older gh, read the attestation through the API instead:"
+            echo
+            echo '```'
+            echo "gh api repos/$REPO/attestations/sha256:<digest> --jq '.attestations[0].bundle.dsseEnvelope.payload' | base64 -d | jq .subject"
+            echo '```'
+            echo
             echo "Both gates passed: sharp's own upstream test suite, and the Electron crash regression."
           } >> "$RUNNER_TEMP/notes.md"
 
