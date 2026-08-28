@@ -4,9 +4,8 @@ name: Release
 #
 # Releases are cut HERE, not from a workstation. PhotoStructure pins these
 # assets by sha256 in src/desktop/sharp-patched.json and installs them into
-# every Linux desktop build, so their provenance needs to be a public,
-# reproducible-by-inspection run rather than "whatever was in someone's
-# out/ directory". Each asset also gets a signed build-provenance attestation
+# every Linux desktop build, so their provenance needs to be a publicly logged
+# run rather than "whatever was in someone's out/ directory". Each asset also gets a signed build-provenance attestation
 # (verify with: gh attestation verify <file> --repo photostructure/sharp-electron).
 #
 # Tag scheme is `-ps.N`, deliberately not upstream's `-electron.N`: this is a
@@ -103,8 +102,6 @@ jobs:
             echo '```'
             echo
             echo "Both gates passed: sharp's own upstream test suite, and the Electron crash regression."
-            echo
-            echo "libvips is not currently bit-reproducible, so rebuilding will not necessarily reproduce these digests; the attestation above, not a rebuild, is what ties these bytes to this commit. See the reproducibility workflow for current status."
           } >> "$RUNNER_TEMP/notes.md"
 
       - name: Publish release

@@ -20,8 +20,6 @@ Initial PhotoStructure build, derived from
 - Releases are built and published by GitHub Actions with a signed
   build-provenance attestation, rather than uploaded from a workstation. Tags use
   `-ps.N` so they cannot collide with the `-electron.N` tags this fork inherits.
-- Added a reproducibility check that builds twice and reports whether the digests
-  match. They currently do not for `libvips-cpp.so`; see README.md's Releases section.
 - Passes `--user` to every `docker run` this repo controls, so builds stop leaving
   root-owned files in the work tree. sharp-libvips's own `build.sh` does not, so
   `scripts/clean.sh` deletes from inside a container instead of requiring `sudo`.
