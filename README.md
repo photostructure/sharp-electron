@@ -125,6 +125,8 @@ Every build must pass both, enforced by [scripts/run-gates.sh](scripts/run-gates
 
 **Keep the `electron` devDependency pinned to the version the consumer ships.** This gate's only job is to answer "does sharp survive under *our* Electron", and it is exactly-pinned rather than a caret range so it cannot drift away from that silently. It had been left on `^33.0.0` — ten majors behind PhotoStructure's 43.4.1 — while claiming to validate the shipped runtime. Gate 2 prints the electron version it ran on, so a mismatch is visible in the log.
 
+**The `sharp` devDependency lags `versions.env` on purpose, for up to 14 days.** It is only the default module for `npm run repro` — the "confirm the bug still reproduces on stock sharp" path — so it is the one place this repo resolves `sharp` through npm. The build does not: `scripts/fetch-sources.sh` clones the pinned commit by SHA, which is why `versions.env` can name a release that `.npmrc`'s `min-release-age=14` still refuses to install. Bumping the devDependency to a release younger than that fails with `npm error notarget ... with a date before <date>`. Move it once the version ages past the gate; until then the repro validates against the previous release, which reproduces the same crash.
+
 **If a gate fails with `undefined symbol: g_<something>`**: that's a missing wrapper symbol. Add it to `extra/glib_wrapper.c`/`.h` in `.work/sharp-libvips` (remember the `visibility("default")` attribute), patch the call site, update `patches/wrapper-symbols.json`, regenerate the patch files, rebuild, re-run the gates. This loop is normal — it's how `g_utf8_validate` was found.
 
 ### Alternatives that didn't work

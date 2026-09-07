@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased
+## v0.35.4-ps.1 — 2026-09-04
+
+- Bumped the pinned upstreams to sharp v0.35.4 and sharp-libvips v1.3.3
+  (libvips 8.18.6, glib 2.89.4). Both patches applied unchanged.
+- Hardened the workflows: every Action pinned to a full commit SHA,
+  `contents: read` by default with the release job elevating itself,
+  `persist-credentials: false` on each checkout, non-cancelling concurrency for
+  releases, and a validated `workflow_dispatch` ref so a dispatch cannot tag an
+  arbitrary branch.
+- Disabled setup-node's package-manager cache explicitly. It caches npm by
+  default whenever `package.json` names npm via `packageManager` or
+  `devEngines.packageManager` — neither is set today, but adding one would
+  silently switch caching on in the workflow that publishes digest-pinned,
+  attested binaries.
+- Added `.npmrc` with `ignore-scripts=true` and `min-release-age=14`, and
+  `check-workflows.yml`, which runs zizmor over this repo's own workflows.
+
+## v0.35.3-ps.2 — 2026-08-27
 
 Initial PhotoStructure build, derived from
 [janhapke/sharp-electron](https://github.com/janhapke/sharp-electron) — see
