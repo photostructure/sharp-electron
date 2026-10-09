@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.35.5-ps.1 — 2026-10-08
+
+- Bumped the pinned upstreams to sharp v0.35.5 and sharp-libvips v1.3.4
+  (libvips 8.18.7, glib 2.90.0). sharp v0.35.5 fixes a high-severity librsvg
+  memory vulnerability (GHSA-wq5f-xc86-pv6w). Both patches applied unchanged.
+- Stock sharp v0.35.5 still segfaults decoding a JPEG under Electron, and its
+  addon imports exactly the seven glib symbols already wrapped, so the wrapper
+  set is unchanged. `patches/wrapper-symbols.json` still named v0.35.3 as its
+  verified target; it now names v0.35.5 and v1.3.4.
+- Pinned the `electron` devDependency to 44.4.5, so gate 2 runs on
+  PhotoStructure's Electron major rather than 43. Moved the `sharp`
+  devDependency to 0.35.4, the newest release past `min-release-age=14`.
+- Both gates pass.
+
 ## v0.35.4-ps.1 — 2026-09-04
 
 - Bumped the pinned upstreams to sharp v0.35.4 and sharp-libvips v1.3.3
