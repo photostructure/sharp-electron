@@ -6,9 +6,8 @@
 #
 # Copy both into a consumer's node_modules/@img/sharp-linux-x64/lib/ and delete
 # its @img/sharp-libvips-linux-x64 package. Stock sharp's own JS then loads the
-# patched pair with no source changes — see README.md. PhotoStructure keeps
-# these under tools/sharp-patched/linux-x64/ and installs them from
-# bin/patch-sharp.mjs.
+# patched pair with no source changes — see README.md. PhotoStructure installs
+# them from this repo's release assets via bin/patch-sharp.mjs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"

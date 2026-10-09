@@ -49,7 +49,7 @@ That is the whole integration. Stock `sharp` from npm picks the patched pair up 
 
 Only `linux-x64` needs this. macOS and Windows don't have the bug — leave stock `sharp` alone there.
 
-PhotoStructure does this from `bin/patch-sharp.mjs`, wired as `src/desktop`'s `postinstall`, with these two files committed under `tools/sharp-patched/linux-x64/`.
+PhotoStructure does this from `bin/patch-sharp.mjs`, wired as `src/desktop`'s `postinstall`, which downloads both files from this repo's [releases](#releases) and checks them against the sha256 digests pinned in `src/desktop/sharp-patched.json`.
 
 ## Bump to a newer sharp
 
@@ -57,7 +57,7 @@ Update the refs in [versions.env](versions.env), then `npm run clean && npm run 
 
 Prefer the guided process for a real bump: [`/rebuild-for-version <sharp-version> <sharp-libvips-version>`](.claude/commands/rebuild-for-version.md). A bump involves judgment a script gets silently wrong — whether the bug still reproduces upstream at all, whether a patch conflict is context drift or a structural change, and whether the wrapper symbol set is still complete. That last one is the dangerous one: a newly-added bare glib call site is not a build error, it is a segfault in production.
 
-Note that the emitted filenames carry the sharp and libvips versions, so a consumer that hardcodes them (PhotoStructure's `bin/patch-sharp.mjs` does, deliberately, so a mismatch fails the install) needs updating in the same change.
+Note that the emitted filenames carry the sharp and libvips versions, so a consumer that pins them (PhotoStructure's `src/desktop/sharp-patched.json` does, and `bin/patch-sharp.mjs` deliberately fails the install on a mismatch) needs updating in the same change.
 
 ## Releases
 
@@ -88,7 +88,7 @@ Everything a contributor (or future maintainer bumping versions) needs to know a
 
 ### How the fix works
 
-The fix has two halves, applied as patches (in [patches/](patches/)) to two upstream repos vendored as git submodules pinned at release tags. The submodules stay pristine in git; [scripts/apply-patches.sh](scripts/apply-patches.sh) applies the patches to their working trees at build time (idempotently — it detects an already-patched tree and skips).
+The fix has two halves, applied as patches (in [patches/](patches/)) to two upstream repos that [scripts/fetch-sources.sh](scripts/fetch-sources.sh) clones at the commits pinned in [versions.env](versions.env). The clones stay pristine in git; [scripts/apply-patches.sh](scripts/apply-patches.sh) applies the patches to their working trees at build time (idempotently — it detects an already-patched tree and skips).
 
 **Phase A — `sharp-libvips` (the `libvips` binary).** `sharp-libvips` doesn't vendor `libvips`'s source; its `build/posix.sh` downloads the upstream release tarball at build time and patches it inline. Our patch extends that same mechanism:
 

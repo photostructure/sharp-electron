@@ -6,13 +6,13 @@
 //
 // Expected on UNPATCHED sharp: step 1 succeeds, step 2 segfaults (process dies,
 // no JS exception, no stack trace — that's the bug).
-// Expected on a working @photostructure/sharp-electron build: both steps succeed.
+// Expected on a patched build from this repo: both steps succeed.
 //
 // By default requires the top-level 'sharp' devDependency (the real,
 // unpatched npm package — useful for confirming the bug still reproduces
 // before any patching). Set SHARP_MODULE_PATH to an
 // absolute path to test a different build instead — e.g. gate 2 in
-// scripts/run-gates.sh points this at the freshly-built vendor/sharp.
+// scripts/run-gates.sh points this at the freshly-built .work/sharp.
 
 const sharp = require(process.env.SHARP_MODULE_PATH || 'sharp');
 

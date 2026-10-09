@@ -3,8 +3,8 @@ node_modules/
 # intermediates. Partly root-owned — remove with scripts/clean.sh, not rm -rf.
 .work/
 dist/
-# The two emitted binaries. Not committed here: they are consumed by copying
-# them into a project's tools/ (PhotoStructure commits them via git-LFS).
+# The two emitted binaries. Not committed here: release.yml publishes them as
+# release assets, which PhotoStructure pins by digest in src/desktop/sharp-patched.json.
 out/
 # build transcript from scripts/build-all.sh
 build*.log

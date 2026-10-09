@@ -25,7 +25,7 @@ jobs:
   # honest going forward, rather than relying on occasional manual runs.
   #
   # No `submodules:` on checkout — scripts/fetch-sources.sh clones the commits
-  # pinned in versions.env. See README.md's "Building from source".
+  # pinned in versions.env. See README.md's "Build it".
   #
   # There is no macOS/Windows job: this repo only ever produces linux-x64
   # binaries, and consumers leave stock `sharp` alone on every other platform,

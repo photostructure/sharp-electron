@@ -50,7 +50,7 @@ apply_patch() {
 
     echo "error: $2 does not apply cleanly to $target, and isn't already applied either." >&2
     echo "       The pinned upstream in versions.env likely moved in the area this patch" >&2
-    echo "       touches. See README.md's 'Bumping to a newer sharp' section — and check" >&2
+    echo "       touches. See README.md's 'Bump to a newer sharp' section — and check" >&2
     echo "       patches/wrapper-symbols.json against a fresh grep of the upstream source," >&2
     echo "       since a bump can introduce new glib call sites that need wrapping too." >&2
     exit 1

@@ -79,11 +79,10 @@ npm run test:gates
    ```
    Expect no output.
 
-## Step 7: Hand off to the consumer — do not publish anything
+## Step 7: Hand off to the consumer — do not publish anything yourself
 
-This repo publishes nothing. There is no npm package and no release script.
+Releases are built and published only by `.github/workflows/release.yml`, when a `v<sharp-version>-ps.N` tag is pushed. PhotoStructure's `bin/patch-sharp.mjs` downloads those release assets and checks them against the digests pinned in `src/desktop/sharp-patched.json`.
 
-1. Copy `out/linux-x64/*` into PhotoStructure's `tools/sharp-patched/linux-x64/` (git-LFS).
-2. **Update PhotoStructure's `src/desktop/package.json`** to the new `sharp` version in the same commit. The two are coupled: `bin/patch-sharp.mjs` derives the addon filename from the installed `@img/sharp-linux-x64` version and **fails the install** if `tools/sharp-patched/` doesn't provide a matching file. That guard is deliberate — a mismatch would otherwise leave sharp loading the stock addon and crash-looping — but it means bumping one without the other breaks `npm install`.
-3. Write a `CHANGELOG.md` entry: the new upstream versions, any patch adjustments and why (Step 2), any wrapper-symbol changes (Step 3), and confirmation that both gates pass.
-4. **STOP and report** a summary: what changed, what needed judgment, and that it's ready for review. Committing, tagging, and pushing are always explicit, separately-confirmed human actions.
+1. Write a `CHANGELOG.md` entry: the new upstream versions, any patch adjustments and why (Step 2), any wrapper-symbol changes (Step 3), and confirmation that both gates pass.
+2. **STOP and report** a summary: what changed, what needed judgment, and that it's ready for review. Committing, pushing, and pushing the tag that triggers `release.yml` are always explicit, separately-confirmed human actions.
+3. Once the release has published, update PhotoStructure in **one commit**: bump `src/desktop/package.json` to the new `sharp` version, repin `src/desktop/sharp-patched.json` to the new tag and the release's digests, and update `tools/licenses/sharp-libvips/PROVENANCE.md`. Take the digests from the release, never from a local build: libvips is not bit-reproducible, so local bytes differ. The package version and the pin are coupled: `bin/patch-sharp.mjs` derives the addon filename from the installed `@img/sharp-linux-x64` version and **fails the install** if `sharp-patched.json` doesn't pin a matching file. That guard is deliberate — a mismatch would otherwise leave sharp loading the stock addon and crash-looping — but it means bumping one without the other breaks `npm install`. To test a local build there before the release exists, set `PS_SHARP_ELECTRON_DIR` (and `PS_SHARP_ELECTRON_UNPINNED=1`) for `bin/patch-sharp.mjs`.
