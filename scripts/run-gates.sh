@@ -16,14 +16,20 @@ docker run --rm \
   sharp-electron-build sh -c "node --experimental-test-coverage test/unit.mjs" > "$GATE1_LOG" 2>&1
 gate1_exit=$?
 
+# sharp's test/unit.mjs pipes node:test's spec reporter (never TAP), which
+# lists every failing test after a "✖ failing tests:" line as
+# `test at <file>:<line>:<col>`.
+#
 # test/unit/esm.mjs is a known, pre-existing, unrelated failure (an
 # ERR_REQUIRE_ESM CJS/ESM interop quirk on this Node version — present against
 # a stock, unpatched sharp build too). Anything else failing is a real gate-1
-# failure.
-other_failures=$(grep -E "^not ok" "$GATE1_LOG" | grep -v "esm.mjs" || true)
-if [ -n "$other_failures" ]; then
-  echo "GATE 1 FAILED — failures beyond the known esm.mjs interop quirk:"
-  echo "$other_failures"
+# failure, and so is a non-zero exit that lists no failing test: the runner
+# itself failed, e.g. docker could not start the container.
+failed=$(sed -n '/^✖ failing tests:/,$p' "$GATE1_LOG" | grep '^test at ' || true)
+other_failures=$(echo "$failed" | grep -v '^test at test/unit/esm.mjs:' || true)
+if [ -n "$other_failures" ] || { [ "$gate1_exit" -ne 0 ] && [ -z "$failed" ]; }; then
+  echo "GATE 1 FAILED (exit $gate1_exit) — failures beyond the known esm.mjs interop quirk:"
+  echo "${other_failures:-none listed, so the test runner itself failed}"
   tail -60 "$GATE1_LOG"
   rm -f "$GATE1_LOG"
   exit 1

@@ -12,6 +12,11 @@
 - Pinned the `electron` devDependency to 44.4.5, so gate 2 runs on
   PhotoStructure's Electron major rather than 43. Moved the `sharp`
   devDependency to 0.35.4, the newest release past `min-release-age=14`.
+- Gate 1 now fails when sharp's test suite does. It looked for TAP `not ok`
+  lines, but sharp's `test/unit.mjs` prints the spec reporter's output, so the
+  gate passed whatever failed, including in the v0.35.4-ps.1 release run. It
+  now reads the spec reporter's failing-tests list, and fails on a non-zero
+  exit that lists no failing test.
 - Both gates pass.
 
 ## v0.35.4-ps.1 — 2026-09-04
